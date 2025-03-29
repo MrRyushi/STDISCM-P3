@@ -23,7 +23,7 @@ unsigned int numConsumerThreads = 0;
 unsigned int maxQueueSize = 0;
 
 // Server details
-#define SERVER_IP "192.168.56.1" 
+#define SERVER_IP "192.168.68.60" 
 #define SERVER_PORT 8080
 
 // Constants
