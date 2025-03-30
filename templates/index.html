@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Uploaded Videos</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f4f4; padding: 20px; }
+        .video-grid { display: flex; flex-wrap: wrap; gap: 20px; }
+        .video-container { width: 300px; border: 1px solid #ccc; padding: 10px; background: #fff; position: relative; }
+        video { width: 100%; height: auto; }
+        .video-name { text-align: center; margin-top: 10px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <h2>Uploaded Videos</h2>
+    <div class="video-grid">
+        {% for video in videos %}
+        <div class="video-container">
+            <video id="vid_{{ loop.index }}" preload="metadata" onmouseenter="preview(this)" onmouseleave="pausePreview(this)" onclick="playFull(this)">
+                <source src="/videos/{{ video }}" type="video/mp4">
+                Your browser does not support HTML5 video.
+            </video>
+            <div class="video-name">{{ video }}</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <script>
+        function preview(video) {
+            video.currentTime = 0;
+            video.play();
+            setTimeout(() => { video.pause(); }, 10000);  // 10 seconds preview
+        }
+
+        function pausePreview(video) {
+            video.pause();
+            video.currentTime = 0;
+        }
+
+        function playFull(video) {
+            video.requestFullscreen();
+            video.play();
+        }
+    </script>
+</body>
+</html>
