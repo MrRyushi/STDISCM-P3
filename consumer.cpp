@@ -67,12 +67,12 @@ void receiveFile(SOCKET clientSocket) {
         return;
     }
 
-    cout << "Receiving file: " << filename << endl;
+    //cout << "Receiving file: " << filename << endl;
 
     char buffer[4096];
     int bytesReceived;
     while ((bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0)) > 0) {
-        cout << "Receiving data for: " << filename << endl;
+        //cout << "Receiving data for: " << filename << endl;
         file.write(buffer, bytesReceived);
     }
 

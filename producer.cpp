@@ -27,7 +27,7 @@ unsigned int numConsumerThreads = 0;
 unsigned int maxQueueSize = 0;
 
 // Server details
-#define SERVER_IP "127.0.0.1"  // Use proper IP address
+#define SERVER_IP "192.168.68.59"  // Replace with your server's IP address
 #define SERVER_PORT 8080
 
 // Constants for producer/consumer
