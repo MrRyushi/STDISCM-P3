@@ -26,7 +26,7 @@ unsigned int numConsumerThreads = 0;
 unsigned int maxQueueSize = 0;
 
 // Server details
-#define SERVER_IP "192.168.68.59"  // Replace with your server's IP address
+#define SERVER_IP "10.147.20.220"  // Replace with your server's IP address
 #define SERVER_PORT 8080
 
 queue<string> videoQueue;
