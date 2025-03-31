@@ -15,8 +15,7 @@
 #include <wincrypt.h>
 #include <sstream>
 #include <iomanip>
-
-#pragma comment(lib, "ws2_32.lib")
+#include <set>
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -30,10 +29,10 @@ unsigned int maxQueueSize = 0;
 #define SERVER_IP "192.168.68.59"  // Replace with your server's IP address
 #define SERVER_PORT 8080
 
-// Constants for producer/consumer
 queue<string> videoQueue;
 mutex queueMutex;
 condition_variable queueCV;
+set<string> processedFiles; // Set to track added files
 
 // -- Helper Functions for Config File  --
 
@@ -85,27 +84,40 @@ unsigned int getValueFromLine(string line, string key){
 
 void producerThread(int producerId){
     string folderPath = "folder" + to_string(producerId);
-    while(true){
-        if (!fs::exists(folderPath) || !fs::is_directory(folderPath)){
-            cout << "Folder " << folderPath << " does not exist" << endl;
-            this_thread::sleep_for(chrono::seconds(1));
-            continue;
-        }
-        for (const auto& entry : fs::directory_iterator(folderPath)) {
-            if (entry.is_regular_file()) {
-                string videoFile = entry.path().string();
-                unique_lock<mutex> lock(queueMutex);
-                if (videoQueue.size() >= maxQueueSize) {
-                    cout << "Queue full. Dropping: " << videoFile << endl;
-                    return; 
-                }
+
+    if (!fs::exists(folderPath) || !fs::is_directory(folderPath)) {
+        cout << "Folder " << folderPath << " does not exist" << endl;
+        return; // Exit if the folder does not exist
+    }
+
+    bool filesAdded = false;
+
+    for (const auto& entry : fs::directory_iterator(folderPath)) {
+        if (entry.is_regular_file()) {
+            string videoFile = entry.path().string();
+
+            unique_lock<mutex> lock(queueMutex);
+            if (videoQueue.size() >= maxQueueSize) {
+                cout << "Queue full. Dropping: " << videoFile << endl;
+                return;
+            }
+
+            // Avoid adding duplicate files
+            if (processedFiles.find(videoFile) == processedFiles.end()) {
                 videoQueue.push(videoFile);
+                processedFiles.insert(videoFile);
                 cout << "Producer " << producerId << " added: " << videoFile << endl;
+                filesAdded = true;
                 lock.unlock();
                 queueCV.notify_one();
             }
         }
     }
+
+    if (!filesAdded) {
+        cout << "No new files found in " << folderPath << endl;
+    }
+
 }
 
 // -- File Hash Calculation using Windows CryptoAPI --

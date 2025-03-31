@@ -16,7 +16,10 @@
     <div class="video-grid">
         {% for video in videos %}
         <div class="video-container">
-            <video id="vid_{{ loop.index }}" preload="metadata" onmouseenter="preview(this)" onmouseleave="pausePreview(this)" onclick="playFull(this)">
+            <video id="vid_{{ loop.index }}" preload="metadata" 
+                onmouseenter="preview(this)" 
+                onmouseleave="pausePreview(this)" 
+                onclick="playFull(this)">
                 <source src="/videos/{{ video }}" type="video/mp4">
                 Your browser does not support HTML5 video.
             </video>
@@ -26,19 +29,56 @@
     </div>
 
     <script>
+        let previewTimeouts = new Map();
+
         function preview(video) {
             video.currentTime = 0;
             video.play();
-            setTimeout(() => { video.pause(); }, 10000);  // 10 seconds preview
+
+            // Clear any previous timeout if it exists
+            if (previewTimeouts.has(video)) {
+                clearTimeout(previewTimeouts.get(video));
+            }
+
+            let timeout = setTimeout(() => { 
+                video.pause();
+                video.currentTime = 0;
+            }, 10000);  // 10-second preview
+
+            previewTimeouts.set(video, timeout);
         }
 
         function pausePreview(video) {
             video.pause();
             video.currentTime = 0;
+
+            // Clear any pending timeout
+            if (previewTimeouts.has(video)) {
+                clearTimeout(previewTimeouts.get(video));
+                previewTimeouts.delete(video);
+            }
         }
 
         function playFull(video) {
-            video.requestFullscreen();
+            // Clear any preview timeout before playing fully
+            if (previewTimeouts.has(video)) {
+                clearTimeout(previewTimeouts.get(video));
+                previewTimeouts.delete(video);
+            }
+
+            // Request fullscreen mode
+            if (video.requestFullscreen) {
+                video.requestFullscreen();
+            } else if (video.mozRequestFullScreen) { // Firefox
+                video.mozRequestFullScreen();
+            } else if (video.webkitRequestFullscreen) { // Chrome, Safari, Opera
+                video.webkitRequestFullscreen();
+            } else if (video.msRequestFullscreen) { // IE/Edge
+                video.msRequestFullscreen();
+            }
+
+            // Ensure the full video plays from start
+            video.currentTime = 0;
             video.play();
         }
     </script>
