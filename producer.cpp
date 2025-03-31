@@ -121,7 +121,6 @@ void producerThread(int producerId){
 }
 
 // -- File Hash Calculation using Windows CryptoAPI --
-
 string calculateFileHash(const string &filename) {
     HCRYPTPROV hProv = 0;
     HCRYPTHASH hHash = 0;
@@ -135,13 +134,15 @@ string calculateFileHash(const string &filename) {
     if (!CryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
         CryptReleaseContext(hProv, 0);
         throw runtime_error("CryptCreateHash failed");
-    }
+    }    
+    
     ifstream file(filename, ios::binary);
     if (!file) {
         CryptDestroyHash(hHash);
         CryptReleaseContext(hProv, 0);
         throw runtime_error("Cannot open file");
     }
+    
     const int bufSize = 4096;
     char buf[bufSize];
     while (file.good()) {
@@ -152,11 +153,20 @@ string calculateFileHash(const string &filename) {
             throw runtime_error("CryptHashData failed");
         }
     }
+    
+    // Now retrieve the computed hash
+    if (!CryptGetHashParam(hHash, HP_HASHVAL, hash, &hashSize, 0)) {
+        CryptDestroyHash(hHash);
+        CryptReleaseContext(hProv, 0);
+        throw runtime_error("CryptGetHashParam failed");
+    }
+    
     ostringstream oss;
     for (DWORD i = 0; i < hashSize; i++) {
         oss << hex << setw(2) << setfill('0') << (int)hash[i];
     }
     result = oss.str();
+
     CryptDestroyHash(hHash);
     CryptReleaseContext(hProv, 0);
     return result;
