@@ -8,8 +8,12 @@
 #include <unordered_set>
 #include <sstream>
 #include <mutex>
+#include <condition_variable>
+#include <queue>
 #include <windows.h>
 #include <wincrypt.h>
+#include <algorithm>
+
 
 #pragma comment(lib, "ws2_32.lib") // Link Winsock library
 
@@ -22,6 +26,16 @@ namespace fs = std::filesystem;
 // Global hash set and mutex to protect it
 unordered_set<string> receivedHashes;
 mutex hashMutex;
+
+// Global queue and synchronization tools
+queue<SOCKET> videoQueue;
+mutex queueMutex;
+condition_variable queueCondVar;
+bool serverRunning = true;
+bool queueFull = false;
+
+unsigned int numConsumerThreads = 0;
+unsigned int maxQueueSize = 0;
 
 void initializeWinsock() {
     WSADATA wsaData;
@@ -163,12 +177,95 @@ void populateHashList() {
     }
 }
 
+bool isNumValid(string value) {
+    value.erase(0, value.find_first_not_of(" \t"));
+    value.erase(value.find_last_not_of(" \t") + 1);
+    if (value.empty()) {
+        cerr << "Error: Empty input!" << endl;
+        return false;
+    }
+    if (!all_of(value.begin(), value.end(), ::isdigit)) {
+        cerr << "Error: Input is not a valid number!" << endl;
+        return false;
+    }
+    try {
+        int num = stoi(value);
+        if (num <= 0) {
+            cerr << "Error: Number must be greater than or equal to 0!" << endl;
+            return false;
+        }
+    } catch (const exception& e) {
+        cerr << "Error: Invalid number format!" << endl;
+        return false;
+    }
+    return true;
+}
+
+unsigned int getValueFromLine(string line, string key){
+    if(line.find(key) != string::npos){
+        string value = line.substr(line.find('=') + 1);
+        if(isNumValid(value)){
+            return stoi(value);
+        } else {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+
+bool isConfigFileValid(ifstream &configFile){
+    if (!configFile) {
+        cout << "Error: Could not open the file!" << endl;
+        return false;
+    }
+    return true;
+}
+
+
+void workerThread(int workerId) {
+    while (serverRunning) {
+        SOCKET clientSocket;
+        {
+            unique_lock<mutex> lock(queueMutex);
+            queueCondVar.wait(lock, [] { return !videoQueue.empty() || !serverRunning; });
+
+            if (!serverRunning) break;
+
+            clientSocket = videoQueue.front();
+
+            // If queue was full and now has space, notify producer
+            if (queueFull && videoQueue.size() < maxQueueSize) {
+                queueFull = false;
+                cout << "Queue has space, resuming uploads" << endl;
+                send(clientSocket, "RESUME", 6, 0);
+            }
+        }
+        
+        cout << "Worker " << workerId << " processing video" << endl;
+        receiveFile(clientSocket);
+        videoQueue.pop();
+    }
+}
+
 int main() {
+    ifstream configFile("config.txt");
+    if (!configFile) {
+        cerr << "Error: Could not open config file!" << endl;
+        return 1;
+    }
+    string line;
+    while (getline(configFile, line)) {
+        if (line.find("c") != string::npos) {
+            numConsumerThreads = stoi(line.substr(line.find('=') + 1));
+        } else if (line.find("q") != string::npos) {
+            maxQueueSize = stoi(line.substr(line.find('=') + 1));
+        }
+    }
+    configFile.close();
+
     initializeWinsock();
-    // Ensure the save folder exists
     fs::create_directories(SAVE_PATH);
-    // Populate the hash list from the files already in the folder
-    populateHashList();
 
     SOCKET serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket == INVALID_SOCKET) {
@@ -198,13 +295,48 @@ int main() {
 
     cout << "Server listening on port " << SERVER_PORT << "..." << endl;
 
-    while (true) {
+    vector<thread> workers;
+    for (unsigned int i = 0; i < numConsumerThreads; i++) {
+        workers.emplace_back(workerThread, i);
+    }
+
+    while (serverRunning) {
         SOCKET clientSocket = accept(serverSocket, nullptr, nullptr);
         if (clientSocket == INVALID_SOCKET) {
             cerr << "Accept failed" << endl;
             continue;
         }
-        thread(receiveFile, clientSocket).detach();
+
+        {
+            unique_lock<mutex> lock(queueMutex);
+            
+            if (videoQueue.size() >= maxQueueSize) {
+                if (!queueFull) {
+                    cerr << "Queue full, pausing uploads" << endl;
+                    send(clientSocket, "PAUSE", 5, 0); // Notify producer to pause
+                    queueFull = true;
+                }
+            }
+            videoQueue.push(clientSocket);
+
+            cout << videoQueue.size() << " videos in queue" << endl;
+
+            // If queue was full and now has space, notify producer
+            if (queueFull && videoQueue.size() < maxQueueSize) {
+                queueFull = false;
+                cerr << "Queue has space, resuming uploads" << endl;
+                send(clientSocket, "RESUME", 6, 0);
+            }
+        }
+
+        queueCondVar.notify_one();
+    }
+
+    serverRunning = false;
+    queueCondVar.notify_all();
+
+    for (auto &worker : workers) {
+        worker.detach();
     }
 
     closesocket(serverSocket);

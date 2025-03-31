@@ -22,11 +22,9 @@ namespace fs = std::filesystem;
 
 // Global variables from config
 unsigned int numProducerThreads = 0;
-unsigned int numConsumerThreads = 0;
-unsigned int maxQueueSize = 0;
 
 // Server details
-#define SERVER_IP "10.147.20.220"  // Replace with your server's IP address
+#define SERVER_IP "192.168.68.59"  // Replace with your server's IP address
 #define SERVER_PORT 8080
 
 queue<string> videoQueue;
@@ -97,10 +95,6 @@ void producerThread(int producerId){
             string videoFile = entry.path().string();
 
             unique_lock<mutex> lock(queueMutex);
-            if (videoQueue.size() >= maxQueueSize) {
-                cout << "Queue full. Dropping: " << videoFile << endl;
-                return;
-            }
 
             // Avoid adding duplicate files
             if (processedFiles.find(videoFile) == processedFiles.end()) {
@@ -273,10 +267,6 @@ int main(){
     while(getline(configFile, line)){
         if (line.find("p") != string::npos) {
             numProducerThreads = getValueFromLine(line, "p");
-        } else if (line.find("c") != string::npos) {
-            numConsumerThreads = getValueFromLine(line, "c");
-        } else if (line.find("q") != string::npos) {
-            maxQueueSize = getValueFromLine(line, "q");
         } 
     }
     configFile.close();
