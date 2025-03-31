@@ -321,12 +321,6 @@ int main() {
 
             cout << videoQueue.size() << " videos in queue" << endl;
 
-            // If queue was full and now has space, notify producer
-            if (queueFull && videoQueue.size() < maxQueueSize) {
-                queueFull = false;
-                cerr << "Queue has space, resuming uploads" << endl;
-                send(clientSocket, "RESUME", 6, 0);
-            }
         }
 
         queueCondVar.notify_one();

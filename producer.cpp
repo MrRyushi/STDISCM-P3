@@ -29,8 +29,11 @@ unsigned int numProducerThreads = 0;
 
 queue<string> videoQueue;
 mutex queueMutex;
+mutex pauseMutex; // Mutex to handle pause functionality
 condition_variable queueCV;
 set<string> processedFiles; // Set to track added files
+
+bool paused = false;
 
 // -- Helper Functions for Config File  --
 
@@ -78,41 +81,55 @@ unsigned int getValueFromLine(string line, string key){
     return 0;
 }
 
-// -- Producer Thread Function --
+void listenForConsumerMessages() {
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        cerr << "WSAStartup failed!" << endl;
+        return;
+    }
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        cerr << "Error: Could not create socket" << endl;
+        return;
+    }
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERVER_PORT);
+    inet_pton(AF_INET, SERVER_IP, &serv_addr.sin_addr);
 
-void producerThread(int producerId){
-    string folderPath = "folder" + to_string(producerId);
-
-    if (!fs::exists(folderPath) || !fs::is_directory(folderPath)) {
-        cout << "Folder " << folderPath << " does not exist" << endl;
-        return; // Exit if the folder does not exist
+    if (connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
+        cerr << "Error: Could not connect to server" << endl;
+        closesocket(sockfd);
+        return;
     }
 
-    bool filesAdded = false;
 
-    for (const auto& entry : fs::directory_iterator(folderPath)) {
-        if (entry.is_regular_file()) {
-            string videoFile = entry.path().string();
+    char buffer[10]; // Buffer for incoming messages
+    while (true) {
+        memset(buffer, 0, sizeof(buffer));
+        int bytesReceived = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
+        if (bytesReceived > 0) {
+            buffer[bytesReceived] = '\0'; // Ensure null termination
+            string message(buffer);
 
-            unique_lock<mutex> lock(queueMutex);
-
-            // Avoid adding duplicate files
-            if (processedFiles.find(videoFile) == processedFiles.end()) {
-                videoQueue.push(videoFile);
-                processedFiles.insert(videoFile);
-                cout << "Producer " << producerId << " added: " << videoFile << endl;
-                filesAdded = true;
-                lock.unlock();
-                queueCV.notify_one();
+            if (message == "PAUSE") {
+                cout << "Consumer requested PAUSE. Stopping uploads..." << endl;
+                paused = true;
+            } else if (message == "RESUME") {
+                cout << "Consumer requested RESUME. Resuming uploads..." << endl;
+                paused = false;
             }
+        } else if (bytesReceived == 0) {
+            cout << "Connection closed by consumer" << endl;
+            break;
+        } else {
+            cerr << "Error receiving message from consumer" << endl;
         }
     }
-
-    if (!filesAdded) {
-        cout << "No new files found in " << folderPath << endl;
-    }
-
+    closesocket(sockfd);
+    WSACleanup();
 }
+
 
 // -- File Hash Calculation using Windows CryptoAPI --
 string calculateFileHash(const string &filename) {
@@ -165,8 +182,6 @@ string calculateFileHash(const string &filename) {
     CryptReleaseContext(hProv, 0);
     return result;
 }
-
-// -- sendFile Function with Hash Transfer --
 
 void sendFile(const string& filename){
     WSADATA wsaData;
@@ -245,22 +260,52 @@ void sendFile(const string& filename){
     WSACleanup();
 }
 
-void sendVideos(){
-    while (true) {
-        string videoFile;
-        {
+// -- Producer Thread Function --
+
+void producerThread(int producerId) {
+    string folderPath = "folder" + to_string(producerId);
+
+    if (!fs::exists(folderPath) || !fs::is_directory(folderPath)) {
+        cout << "Folder " << folderPath << " does not exist" << endl;
+        return;
+    }
+
+    bool filesAdded = false;
+
+    for (const auto& entry : fs::directory_iterator(folderPath)) {
+        if (entry.is_regular_file()) {
+            string videoFile = entry.path().string();
+
             unique_lock<mutex> lock(queueMutex);
-            queueCV.wait(lock, [] { return !videoQueue.empty(); });
-            videoFile = videoQueue.front();
-            videoQueue.pop();
-            cout << "Uploading: " << videoFile << endl;
+
+            if (processedFiles.find(videoFile) == processedFiles.end()) {
+                videoQueue.push(videoFile);
+                processedFiles.insert(videoFile);
+                filesAdded = true;
+
+                cout << "Producer " << producerId << " added: " << videoFile << endl;
+
+                lock.unlock();
+                queueCV.notify_one();
+
+                // **Wait if sending is paused**
+                //unique_lock<mutex> pauseLock(pauseMutex);
+                //queueCV.wait(pauseLock, [] { return !paused; });
+
+                cout << "Producer " << producerId << " Uploading: " << videoFile << endl;
+                sendFile(videoFile);
+            }
         }
-        sendFile(videoFile);
-        queueCV.notify_one();
+    }
+
+    if (!filesAdded) {
+        cout << "No new files found in " << folderPath << endl;
     }
 }
 
+
 int main(){
+    
     ifstream configFile("config.txt");
     if (!isConfigFileValid(configFile)) return 1;
     string line;
@@ -271,6 +316,8 @@ int main(){
     }
     configFile.close();
 
+    thread consumerListener(listenForConsumerMessages);
+
     vector<thread> producerThreads;
     for(int i = 0; i < numProducerThreads; i++){
         producerThreads.emplace_back(producerThread, i);
@@ -278,6 +325,7 @@ int main(){
     for(auto& t : producerThreads){
         t.join();
     }
-    sendVideos();
+
+    consumerListener.join();
     return 0;
 }
