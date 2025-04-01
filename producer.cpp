@@ -24,7 +24,7 @@ namespace fs = std::filesystem;
 unsigned int numProducerThreads = 0;
 
 // Server details
-#define SERVER_IP "192.168.1.61"  // Replace with your server's IP address
+#define SERVER_IP "10.147.20.220"  // Replace with your server's IP address
 #define SERVER_PORT 8080
 
 mutex queueMutex;

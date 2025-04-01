@@ -14,7 +14,7 @@
 #include <wincrypt.h>
 #include <algorithm>
 #include <cstdlib>
-
+#include "compression.cpp"
 
 #pragma comment(lib, "ws2_32.lib") // Link Winsock library
 
@@ -226,6 +226,15 @@ void receiveFile(SOCKET clientSocket) {
     //     unique_lock<mutex> lock(queueMutex);
     //     totalCurrentVideos--;
     // }
+
+        // Call the compression function after saving the file.
+    // This will save the compressed file in a separate folder (e.g., "compressed_videos")
+    if (compressVideo(filepath)) {
+        cout << "Video compressed successfully." << endl;
+    } else {
+        cerr << "Video compression failed." << endl;
+    }
+
     queueCondVar.notify_all();
     file.close();
     closesocket(clientSocket);
@@ -248,6 +257,7 @@ void workerThread(int workerId) {
         receiveFile(clientSocket);
     }
 }
+
 
 int main() {
     ifstream configFile("config.txt");

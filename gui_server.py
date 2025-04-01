@@ -2,7 +2,7 @@ from flask import Flask, render_template, send_from_directory
 import os
 
 app = Flask(__name__)
-VIDEO_FOLDER = './received_videos'
+VIDEO_FOLDER = './compressed_videos'
 
 @app.route('/')
 def index():
