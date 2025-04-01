@@ -13,6 +13,7 @@
 #include <windows.h>
 #include <wincrypt.h>
 #include <algorithm>
+#include <cstdlib>
 
 
 #pragma comment(lib, "ws2_32.lib") // Link Winsock library
@@ -263,6 +264,9 @@ int main() {
         }
     }
     configFile.close();
+
+    system("start python gui_server.py");
+
 
     initializeWinsock();
     fs::create_directories(SAVE_PATH);
