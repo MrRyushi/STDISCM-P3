@@ -220,11 +220,11 @@ void receiveFile(SOCKET clientSocket) {
     }
 
     cout << "Received: " << filepath << endl;
-    // Decrement the total count of current videos once processing is done
-    {
-        unique_lock<mutex> lock(queueMutex);
-        totalCurrentVideos--;
-    }
+    // // Decrement the total count of current videos once processing is done
+    // {
+    //     unique_lock<mutex> lock(queueMutex);
+    //     totalCurrentVideos--;
+    // }
     queueCondVar.notify_all();
     file.close();
     closesocket(clientSocket);
