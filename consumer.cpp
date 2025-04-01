@@ -45,56 +45,6 @@ void initializeWinsock() {
     }
 }
 
-void receiveFile(SOCKET clientSocket) {
-    // Receive file hash first (expecting a 64-character SHA-256 hex string)
-    char fileHash[65] = {0};
-    int hashBytes = recv(clientSocket, fileHash, 64, 0);
-    if (hashBytes <= 0) {
-        cerr << "Error receiving file hash" << endl;
-        closesocket(clientSocket);
-        return;
-    }
-    fileHash[64] = '\0'; // Ensure null termination
-
-    {
-        lock_guard<mutex> lock(hashMutex);
-        if (receivedHashes.find(fileHash) != receivedHashes.end()) {
-            // Duplicate file detected; notify client and abort transfer.
-            send(clientSocket, "DUP", 3, 0);
-            cout << "Duplicate file detected (hash: " << fileHash << ")." << endl;
-            closesocket(clientSocket);
-            return;
-        } else {
-            // New file: add hash and allow transfer.
-            receivedHashes.insert(fileHash);
-            send(clientSocket, "OK", 2, 0);
-        }
-    }
-
-    // Now receive filename
-    char filename[256] = {0};
-    recv(clientSocket, filename, sizeof(filename), 0);
-    send(clientSocket, "ACK", 3, 0); // Acknowledge receipt of filename
-
-    string filepath = string(SAVE_PATH) + filename;
-    ofstream file(filepath, ios::binary);
-    if (!file) {
-        cerr << "Error creating file: " << filepath << endl;
-        closesocket(clientSocket);
-        return;
-    }
-
-    char buffer[4096];
-    int bytesReceived;
-    while ((bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0)) > 0) {
-        file.write(buffer, bytesReceived);
-    }
-
-    cout << "Received: " << filepath << endl;
-    file.close();
-    closesocket(clientSocket);
-}
-
 // -- File Hash Calculation using Windows CryptoAPI --
 string calculateFileHash(const string &filename) {
     HCRYPTPROV hProv = 0;
@@ -223,28 +173,71 @@ bool isConfigFileValid(ifstream &configFile){
 }
 
 
+void receiveFile(SOCKET clientSocket) {
+    // Receive file hash first (expecting a 64-character SHA-256 hex string)
+    char fileHash[65] = {0};
+    int hashBytes = recv(clientSocket, fileHash, 64, 0);
+    if (hashBytes <= 0) {
+        cerr << "Error receiving file hash" << endl;
+        closesocket(clientSocket);
+        return;
+    }
+    fileHash[64] = '\0'; // Ensure null termination
+    {
+        lock_guard<mutex> lock(hashMutex);
+        if (receivedHashes.find(fileHash) != receivedHashes.end()) {
+            // Duplicate file detected; notify client and abort transfer.
+            send(clientSocket, "DUP", 3, 0);
+            cout << "Duplicate file detected (hash: " << fileHash << ")." << endl;
+            closesocket(clientSocket);
+            return;
+        } else {
+            // New file: add hash and allow transfer.
+            receivedHashes.insert(fileHash);
+            send(clientSocket, "OK", 2, 0);
+        }
+    }
+
+    // Now receive filename
+    char filename[256] = {0};
+    recv(clientSocket, filename, sizeof(filename), 0);
+    send(clientSocket, "ACK", 3, 0); // Acknowledge receipt of filename
+    //cout << "filename: " << filename << endl;
+
+    string filepath = string(SAVE_PATH) + filename;
+    ofstream file(filepath, ios::binary);
+    if (!file) {
+        cerr << "Error creating file: " << filepath << endl;
+        closesocket(clientSocket);
+        return;
+    }
+
+    char buffer[4096];
+    int bytesReceived;
+    while ((bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0)) > 0) {
+        file.write(buffer, bytesReceived);
+    }
+
+    cout << "Received: " << filepath << endl;
+    file.close();
+    closesocket(clientSocket);
+}
+
 void workerThread(int workerId) {
     while (serverRunning) {
         SOCKET clientSocket;
         {
             unique_lock<mutex> lock(queueMutex);
             queueCondVar.wait(lock, [] { return !videoQueue.empty() || !serverRunning; });
-
+            
             if (!serverRunning) break;
 
             clientSocket = videoQueue.front();
-
-            // If queue was full and now has space, notify producer
-            if (queueFull && videoQueue.size() < maxQueueSize) {
-                queueFull = false;
-                cout << "Queue has space, resuming uploads" << endl;
-                send(clientSocket, "RESUME", 6, 0);
-            }
+            videoQueue.pop();
         }
         
         cout << "Worker " << workerId << " processing video" << endl;
         receiveFile(clientSocket);
-        videoQueue.pop();
     }
 }
 
@@ -306,31 +299,23 @@ int main() {
             cerr << "Accept failed" << endl;
             continue;
         }
-
-        {
-            unique_lock<mutex> lock(queueMutex);
-            
-            if (videoQueue.size() >= maxQueueSize) {
-                if (!queueFull) {
-                    cerr << "Queue full, pausing uploads" << endl;
-                    send(clientSocket, "PAUSE", 5, 0); // Notify producer to pause
-                    queueFull = true;
-                }
-            }
+        if (videoQueue.size() >= maxQueueSize) {
+            cout << "Queue is full, waiting for space..." << endl;
+            queueFull = true;
+        } else {
+            queueFull = false;
             videoQueue.push(clientSocket);
-
-            cout << videoQueue.size() << " videos in queue" << endl;
-
+            queueCondVar.notify_all();
         }
-
-        queueCondVar.notify_one();
+    
+        cout << videoQueue.size() << " videos in queue" << endl;
+        
     }
 
     serverRunning = false;
-    queueCondVar.notify_all();
 
     for (auto &worker : workers) {
-        worker.detach();
+        worker.join();
     }
 
     closesocket(serverSocket);

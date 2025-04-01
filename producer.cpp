@@ -24,10 +24,9 @@ namespace fs = std::filesystem;
 unsigned int numProducerThreads = 0;
 
 // Server details
-#define SERVER_IP "192.168.68.59"  // Replace with your server's IP address
+#define SERVER_IP "192.168.68.61"  // Replace with your server's IP address
 #define SERVER_PORT 8080
 
-queue<string> videoQueue;
 mutex queueMutex;
 mutex pauseMutex; // Mutex to handle pause functionality
 condition_variable queueCV;
@@ -214,8 +213,8 @@ void sendFile(const string& filename){
         closesocket(sockfd);
         return;
     }
-    send(sockfd, fileHash.c_str(), fileHash.size(), 0);
 
+    send(sockfd, fileHash.c_str(), fileHash.size(), 0);
     // Wait for the server's response regarding duplicate check
     char response[4] = {0};
     recv(sockfd, response, sizeof(response)-1, 0);
@@ -276,25 +275,21 @@ void producerThread(int producerId) {
         if (entry.is_regular_file()) {
             string videoFile = entry.path().string();
 
-            unique_lock<mutex> lock(queueMutex);
+            // **First check without locking**
+            {
+                lock_guard<mutex> lock(queueMutex);
+                if (processedFiles.find(videoFile) != processedFiles.end()) {
+                    continue;
+                }
 
-            if (processedFiles.find(videoFile) == processedFiles.end()) {
-                videoQueue.push(videoFile);
+                // **Lock and modify shared structures**
                 processedFiles.insert(videoFile);
                 filesAdded = true;
-
-                cout << "Producer " << producerId << " added: " << videoFile << endl;
-
-                lock.unlock();
-                queueCV.notify_one();
-
-                // **Wait if sending is paused**
-                //unique_lock<mutex> pauseLock(pauseMutex);
-                //queueCV.wait(pauseLock, [] { return !paused; });
-
-                cout << "Producer " << producerId << " Uploading: " << videoFile << endl;
-                sendFile(videoFile);
             }
+
+            // **Process the file outside the lock**
+            cout << "Producer " << producerId << " Uploading: " << videoFile << endl;
+            sendFile(videoFile);
         }
     }
 
@@ -316,7 +311,7 @@ int main(){
     }
     configFile.close();
 
-    thread consumerListener(listenForConsumerMessages);
+    //thread consumerListener(listenForConsumerMessages);
 
     vector<thread> producerThreads;
     for(int i = 0; i < numProducerThreads; i++){
@@ -326,6 +321,6 @@ int main(){
         t.join();
     }
 
-    consumerListener.join();
+    //consumerListener.join();
     return 0;
 }
