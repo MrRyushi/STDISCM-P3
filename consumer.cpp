@@ -33,6 +33,7 @@ mutex queueMutex;
 condition_variable queueCondVar;
 bool serverRunning = true;
 bool queueFull = false;
+unsigned int totalCurrentVideos = 0;
 
 unsigned int numConsumerThreads = 0;
 unsigned int maxQueueSize = 0;
@@ -219,6 +220,12 @@ void receiveFile(SOCKET clientSocket) {
     }
 
     cout << "Received: " << filepath << endl;
+    // Decrement the total count of current videos once processing is done
+    {
+        unique_lock<mutex> lock(queueMutex);
+        totalCurrentVideos--;
+    }
+    queueCondVar.notify_all();
     file.close();
     closesocket(clientSocket);
 }
@@ -299,15 +306,26 @@ int main() {
             cerr << "Accept failed" << endl;
             continue;
         }
-        if (videoQueue.size() >= maxQueueSize) {
-            cout << "Queue is full, waiting for space..." << endl;
-            queueFull = true;
-        } else {
-            queueFull = false;
+        // Lock the queueMutex to safely access and modify the queue
+        {
+            unique_lock<mutex> lock(queueMutex);
+            // Check if the queue is full
+            cout << "Total current videos: " << totalCurrentVideos << endl;
+            if (totalCurrentVideos >= maxQueueSize) {
+                cout << "Queue is full, rejecting incoming video..." << endl;
+                // Notify producer that the queue is full
+                send(clientSocket, "FULL", 4, 0);  
+                closesocket(clientSocket);  // Reject the connection
+                continue;
+            }
+
+            // Add to the queue if there's space
             videoQueue.push(clientSocket);
-            queueCondVar.notify_all();
+            totalCurrentVideos++;
         }
-    
+
+        queueCondVar.notify_all(); // Wake up any waiting worker threads
+
         cout << videoQueue.size() << " videos in queue" << endl;
         
     }
