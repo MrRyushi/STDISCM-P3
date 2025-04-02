@@ -275,7 +275,8 @@ int main() {
     }
     configFile.close();
 
-    system("start python gui_server.py");
+    //system("start python gui_server.py");
+    system("start cmd /c node gui_server.js");
 
 
     initializeWinsock();
