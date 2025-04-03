@@ -70,14 +70,14 @@ Note: This project implements a leaky bucket design; any additional videos beyon
 
 In the terminal, type:
 
-- g++ -std=c++11 -o producer producer.cpp -pthread
-- ./producer
+- `g++ -std=c++11 -o producer producer.cpp -pthread -lws2_32`
+- `./producer`
 
 # Consumer
 
 In the terminal, type:
 
-- java Gui.java
+- `java Gui.java`
 
 ### For Visual Studio Code (VS Code):
 
