@@ -276,9 +276,12 @@ int main() {
     configFile.close();
 
     //system("start python gui_server.py");
-    system("start cmd /c node gui_server.js");
+    //system("start cmd /c node gui_server.js");
+    //system("javac MyHttpServer.java");
+    //system("java -cp . MyHttpServer");
 
 
+    //cout << "Starting server..." << endl;
     initializeWinsock();
     fs::create_directories(SAVE_PATH);
 

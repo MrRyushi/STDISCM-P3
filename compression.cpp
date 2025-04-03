@@ -1,8 +1,6 @@
-#include "compression.h"
 #include <cstdlib>
 #include <iostream>
 #include <filesystem>
-#include "compression.h"
 
 namespace fs = std::filesystem;
 
