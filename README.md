@@ -32,7 +32,7 @@ STDISCM-P3 is a simulation of a media upload service that leverages concurrent p
 - **Networking**: Runs on a different machine than the producer and communicates via network sockets.
 
 ##Input Parameters
-`p`: Number of producer threads/instances.
+`p`: Number of producer threads/instances. Producers can be only `6` at most.
 
 `c`: Number of consumer threads.
 
@@ -70,7 +70,7 @@ Note: This project implements a leaky bucket design; any additional videos beyon
 
 In the terminal, type:
 
-- `g++ -std=c++11 -o producer producer.cpp -pthread -lws2_32`
+- `g++ -std=c++17 -o producer producer.cpp -pthread -lws2_32`
 - `./producer`
 
 # Consumer

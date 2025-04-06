@@ -308,6 +308,10 @@ int main(){
         if (line.find("p") != string::npos) {
             numProducerThreads = getValueFromLine(line, "p");
         } 
+        if (numProducerThreads > 6) {
+            cerr << "Error: numProducerThreads cannot be greater than 6." << endl;
+            return 1;
+        }
     }
     configFile.close();
 
