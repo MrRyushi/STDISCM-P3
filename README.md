@@ -70,7 +70,7 @@ Note: This project implements a leaky bucket design; any additional videos beyon
 
 In the terminal, type:
 
-- `g++ -std=c++17 -o producer producer.cpp -pthread -lws2_32`
+- `g++ -o producer producer.cpp -pthread -lws2_32`
 - `./producer`
 
 # Consumer
