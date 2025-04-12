@@ -176,7 +176,7 @@ bool isConfigFileValid(ifstream &configFile){
 
 
 void receiveFile(SOCKET clientSocket) {
-    // Receive file hash first (expecting a 64-character SHA-256 hex string)
+    // --- Existing code to receive file hash ---
     char fileHash[65] = {0};
     int hashBytes = recv(clientSocket, fileHash, 64, 0);
     if (hashBytes <= 0) {
@@ -184,29 +184,39 @@ void receiveFile(SOCKET clientSocket) {
         closesocket(clientSocket);
         return;
     }
-    fileHash[64] = '\0'; // Ensure null termination
+    fileHash[64] = '\0';
     {
         lock_guard<mutex> lock(hashMutex);
         if (receivedHashes.find(fileHash) != receivedHashes.end()) {
-            // Duplicate file detected; notify client and abort transfer.
             send(clientSocket, "DUP", 3, 0);
             cout << "Duplicate file detected (hash: " << fileHash << ")." << endl;
             closesocket(clientSocket);
             return;
         } else {
-            // New file: add hash and allow transfer.
             receivedHashes.insert(fileHash);
             send(clientSocket, "OK", 2, 0);
         }
     }
 
-    // Now receive filename
+    // --- Existing code to receive filename ---
     char filename[256] = {0};
     recv(clientSocket, filename, sizeof(filename), 0);
-    send(clientSocket, "ACK", 3, 0); // Acknowledge receipt of filename
-    //cout << "filename: " << filename << endl;
-
+    send(clientSocket, "ACK", 3, 0);
     string filepath = string(SAVE_PATH) + filename;
+
+    // * New Code Block: Receive expected file size *
+    char fileSizeBuffer[32] = {0};
+    int sizeBytes = recv(clientSocket, fileSizeBuffer, sizeof(fileSizeBuffer) - 1, 0);
+    if (sizeBytes <= 0) {
+        cerr << "Error receiving file size" << endl;
+        closesocket(clientSocket);
+        return;
+    }
+    fileSizeBuffer[sizeBytes] = '\0'; // null terminate the string
+    unsigned long long expectedFileSize = stoull(fileSizeBuffer);
+    send(clientSocket, "SIZE_ACK", 8, 0);
+
+    // --- Open the file for writing ---
     ofstream file(filepath, ios::binary);
     if (!file) {
         cerr << "Error creating file: " << filepath << endl;
@@ -214,21 +224,28 @@ void receiveFile(SOCKET clientSocket) {
         return;
     }
 
+    // --- Modified code: Receive file data with total byte tracking ---
     char buffer[4096];
-    int bytesReceived;
+    int bytesReceived = 0;
+    unsigned long long totalReceived = 0;
     while ((bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0)) > 0) {
         file.write(buffer, bytesReceived);
+        totalReceived += bytesReceived;
+    }
+    file.close();
+
+    // --- New Check: Validate complete file reception ---
+    if (totalReceived != expectedFileSize) {
+        cerr << "Error: File incomplete. Expected " << expectedFileSize 
+             << " bytes, but received " << totalReceived << " bytes." << endl;
+        fs::remove(filepath); // Optionally delete the incomplete file
+        closesocket(clientSocket);
+        return;
     }
 
-    cout << "Received: " << filepath << endl;
-    // // Decrement the total count of current videos once processing is done
-    // {
-    //     unique_lock<mutex> lock(queueMutex);
-    //     totalCurrentVideos--;
-    // }
+    cout << "Received file completely: " << filepath << " (" << totalReceived << " bytes)" << endl;
 
-        // Call the compression function after saving the file.
-    // This will save the compressed file in a separate folder (e.g., "compressed_videos")
+    // --- Existing code to call compression ---
     if (compressVideo(filepath)) {
         cout << "Video compressed successfully." << endl;
     } else {
@@ -236,9 +253,8 @@ void receiveFile(SOCKET clientSocket) {
     }
 
     queueCondVar.notify_all();
-    file.close();
     closesocket(clientSocket);
-}
+ }
 
 void workerThread(int workerId) {
     while (serverRunning) {
